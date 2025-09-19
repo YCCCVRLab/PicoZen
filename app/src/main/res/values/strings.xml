@@ -72,6 +72,7 @@
     <string name="quit">Quit</string>
     <string-array name="address_format">
         <item />  <!-- EmptyProvider -->
+        <item />  <!-- YCCCServerProvider - no address needed -->
         <item>username:password@host</item>  <!-- ProxyProvider -->
         <item>username:password@host</item>  <!-- FTPProvider -->
         <item>username:password@host/share</item>  <!-- SMBProvider -->
@@ -94,6 +95,7 @@
 
     <string-array name="sideload_type_options">
         <item>None</item>
+        <item>YCCC VR Lab Server</item>
         <item>Proxied FTP</item>
         <item>FTP (Reveals IP)</item>
         <item>SMB</item>
