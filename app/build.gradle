@@ -4,30 +4,14 @@ plugins {
 
 android {
     namespace 'com.barnabwhy.picozen'
-    compileSdk 33
-
-    signingConfigs {
-        debug {
-            storeFile file(var1)
-            storePassword var2
-            keyPassword var3
-            keyAlias var4
-        }
-        release {
-            storeFile file(var1)
-            storePassword var2
-            keyPassword var3
-            keyAlias var4
-        }
-    }
+    compileSdk 34
 
     defaultConfig {
         applicationId "com.barnabwhy.picozen"
         minSdk 29
-        //noinspection ExpiredTargetSdkVersion
-        targetSdk 29
-        versionCode 73
-        versionName "0.7.3"
+        targetSdk 34
+        versionCode 74
+        versionName "0.7.4"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -40,9 +24,14 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            // Using debug signing for release builds (suitable for sideloading)
+            signingConfig signingConfigs.debug
+        }
+        debug {
+            minifyEnabled false
         }
     }
+    
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -50,20 +39,18 @@ android {
 }
 
 dependencies {
-
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'com.google.android.material:material:1.10.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.palette:palette:1.0.0'
 
     implementation 'org.tukaani:xz:1.9'
-    implementation 'org.apache.commons:commons-compress:1.23.0'
+    implementation 'org.apache.commons:commons-compress:1.24.0'
 
     implementation 'commons-net:commons-net:3.9.0'
-    implementation 'com.hierynomus:smbj:0.11.5'
+    implementation 'com.hierynomus:smbj:0.12.2'
 
-    implementation  "io.noties.markwon:core:4.6.2"
-    implementation  "io.noties.markwon:ext-tables:4.6.2"
-    implementation  "io.noties.markwon:ext-tasklist:4.6.2"
-
+    implementation "io.noties.markwon:core:4.6.2"
+    implementation "io.noties.markwon:ext-tables:4.6.2"
+    implementation "io.noties.markwon:ext-tasklist:4.6.2"
 }
