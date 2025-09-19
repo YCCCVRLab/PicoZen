@@ -26,6 +26,7 @@ import com.barnabwhy.picozen.Sideload.Providers.EmptyProvider;
 import com.barnabwhy.picozen.Sideload.Providers.FTPProvider;
 import com.barnabwhy.picozen.Sideload.Providers.ProxyProvider;
 import com.barnabwhy.picozen.Sideload.Providers.SMBProvider;
+import com.barnabwhy.picozen.Sideload.Providers.YCCCServerProvider;
 import com.barnabwhy.picozen.Sideload.SideloadItem;
 import com.barnabwhy.picozen.Sideload.SideloadItemType;
 
@@ -74,6 +75,7 @@ public class SideloadAdapter extends BaseAdapter {
 
     public enum SideloadProviderType {
         NONE,
+        YCCC_SERVER,  // Add YCCC Server as the first option after NONE
         PROXY,
         FTP,
         SMB,
@@ -83,14 +85,18 @@ public class SideloadAdapter extends BaseAdapter {
         mainActivityContext = context;
         sharedPreferences = mainActivityContext.getSharedPreferences(mainActivityContext.getPackageName() + "_preferences", Context.MODE_PRIVATE);
 
-        setProvider(SideloadProviderType.values()[sharedPreferences.getInt(SettingsProvider.KEY_SIDELOAD_TYPE, 0)]);
+        // Default to YCCC_SERVER if no preference is set
+        int defaultProvider = sharedPreferences.getInt(SettingsProvider.KEY_SIDELOAD_TYPE, 1); // Default to YCCC_SERVER (index 1)
+        setProvider(SideloadProviderType.values()[defaultProvider]);
     }
 
     public void setProvider(SideloadProviderType type) {
         if(provider != null) {
             provider.cleanup();
         }
-        if(type == SideloadProviderType.FTP) {
+        if(type == SideloadProviderType.YCCC_SERVER) {
+            provider = new YCCCServerProvider(sharedPreferences, mainActivityContext, this::notifyDataSetChanged);
+        } else if(type == SideloadProviderType.FTP) {
             provider = new FTPProvider(sharedPreferences, mainActivityContext, this::notifyDataSetChanged);
         } else if(type == SideloadProviderType.PROXY) {
             provider = new ProxyProvider(sharedPreferences, mainActivityContext, this::notifyDataSetChanged);
@@ -116,7 +122,7 @@ public class SideloadAdapter extends BaseAdapter {
         } else if (getCount() == 0) {
             mainActivityContext.findViewById(R.id.sideload_grid).setVisibility(View.GONE);
             mainActivityContext.findViewById(R.id.sideload_grid_empty).setVisibility(View.VISIBLE);
-            if (sharedPreferences.getInt(SettingsProvider.KEY_SIDELOAD_TYPE, 0) == 0 || sharedPreferences.getString(SettingsProvider.KEY_SIDELOAD_HOST, "").equals("")) {
+            if (sharedPreferences.getInt(SettingsProvider.KEY_SIDELOAD_TYPE, 1) == 0 || (provider instanceof ProxyProvider && sharedPreferences.getString(SettingsProvider.KEY_SIDELOAD_HOST, "").equals(""))) {
                 ((TextView)mainActivityContext.findViewById(R.id.sideload_grid_empty)).setText(R.string.no_sideload_server);
             } else {
                 ((TextView)mainActivityContext.findViewById(R.id.sideload_grid_empty)).setText(R.string.no_files);
