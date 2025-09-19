@@ -10,8 +10,8 @@ android {
         applicationId "com.barnabwhy.picozen"
         minSdk 29
         targetSdk 34
-        versionCode 75
-        versionName "0.7.5-yccc"
+        versionCode 76
+        versionName "0.7.6-yccc-fixed"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -36,6 +36,17 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    // Fix for build issues
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libjsc.so'
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+    }
 }
 
 dependencies {
@@ -44,16 +55,31 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.palette:palette:1.0.0'
 
+    // File compression libraries
     implementation 'org.tukaani:xz:1.9'
     implementation 'org.apache.commons:commons-compress:1.24.0'
 
+    // Network libraries - updated versions to fix compatibility
     implementation 'commons-net:commons-net:3.9.0'
+    
+    // Updated SMB library to fix deprecated API issues
+    implementation 'com.hierynomus:smbj:0.12.1'
+    
+    // HTTP client for server communication and file size detection
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+    
+    // JSON parsing for API responses
+    implementation 'com.google.code.gson:gson:2.10.1'
 
+    // Image loading
     implementation 'com.github.bumptech.glide:glide:4.16.0'
 
     // Markwon dependencies - using stable versions
     implementation 'io.noties.markwon:core:4.6.2'
-    // Removed softbreak-plugin as it's causing build issues
+    
+    // Progress bar for downloads with proper file size calculation
+    implementation 'com.daimajia.numberprogressbar:library:1.4@aar'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
