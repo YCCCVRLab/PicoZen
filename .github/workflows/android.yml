@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Set up JDK 17
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -22,7 +22,7 @@ jobs:
 
     - name: Create Android signing key from secret
       run: |
-        sed -i 's/C:\\\\Users\\\\Username\\\\/..\//g' build.gradle
+        sed -i 's/C:\\\\Users\\\\Username\\\\/..\\//g' build.gradle
         echo -n "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > android_signing_key.jks
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
@@ -33,7 +33,7 @@ jobs:
         cd app/build/outputs/apk/release
         mv app-release.apk PicoZen.apk
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: PicoZen
         path: app/build/outputs/apk/release/PicoZen.apk
