@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 
 public class YCCCServerProvider extends AbstractProvider {
     // Updated to use new Koyeb deployment server
@@ -46,6 +47,30 @@ public class YCCCServerProvider extends AbstractProvider {
         updateList();
     }
 
+    @Override
+    public void setHolder(int position, SideloadAdapter.ViewHolder holder) {
+        SideloadItem item = getItem(position);
+        holder.name.setText(item.getName());
+        
+        // Set description if available
+        String description = itemDescriptions.get(item.getName());
+        if (description != null && description.length() > 100) {
+            holder.modified.setText(description.substring(0, 97) + "...");
+        } else {
+            holder.modified.setText(item.getModifiedAt());
+        }
+        
+        // Show download icon for files
+        if (item.getType() == SideloadItemType.FILE) {
+            holder.downloadIcon.setVisibility(View.VISIBLE);
+            holder.openFolderIcon.setVisibility(View.GONE);
+        } else {
+            holder.downloadIcon.setVisibility(View.GONE);
+            holder.openFolderIcon.setVisibility(View.VISIBLE);
+        }
+    }
+
+    @Override
     public void updateList() {
         Thread thread = new Thread(() -> {
             itemList = getAppsFromServer();
@@ -156,28 +181,13 @@ public class YCCCServerProvider extends AbstractProvider {
         return items;
     }
 
-    // Custom callback interfaces to replace Java 8 Consumer
-    public interface DownloadProgressCallback {
-        void onProgress(DownloadProgressInfo progress);
-    }
-    
-    public interface DownloadCompletionCallback {
-        void onComplete(boolean success);
-    }
-    
-    // Custom progress info class
-    public static class DownloadProgressInfo {
-        public long totalBytes = -1;
-        public long downloadedBytes = 0;
-        public String filename = "";
-    }
-
-    public void downloadFile(SideloadItem item, DownloadProgressCallback progressCallback, DownloadCompletionCallback completionCallback) {
+    @Override
+    public void downloadFile(SideloadItem item, Consumer<File> startCallback, Consumer<Long> progressCallback, Consumer<File> completeCallback, Consumer<Exception> errorCallback) {
         String downloadUrl = itemDownloadUrls.get(item.getName());
         
         if (downloadUrl == null || downloadUrl.isEmpty()) {
             Log.e(TAG, "No download URL for item: " + item.getName());
-            completionCallback.onComplete(false);
+            errorCallback.accept(new Exception("No download URL available"));
             return;
         }
 
@@ -199,6 +209,9 @@ public class YCCCServerProvider extends AbstractProvider {
                 String filename = item.getName().replaceAll("[^a-zA-Z0-9._-]", "_") + ".apk";
                 File outputFile = new File(downloadsDir, filename);
                 
+                // Call start callback
+                startCallback.accept(outputFile);
+                
                 FileOutputStream fileOutputStream = new FileOutputStream(outputFile);
                 
                 byte[] buffer = new byte[8192];
@@ -210,12 +223,7 @@ public class YCCCServerProvider extends AbstractProvider {
                     totalBytesRead += bytesRead;
                     
                     // Update progress
-                    DownloadProgressInfo progress = new DownloadProgressInfo();
-                    progress.totalBytes = item.getSize();
-                    progress.downloadedBytes = totalBytesRead;
-                    progress.filename = filename;
-                    
-                    mainActivityContext.runOnUiThread(() -> progressCallback.onProgress(progress));
+                    progressCallback.accept(totalBytesRead);
                 }
                 
                 fileOutputStream.close();
@@ -223,18 +231,18 @@ public class YCCCServerProvider extends AbstractProvider {
                 
                 Log.i(TAG, "Download completed: " + filename + " (" + totalBytesRead + " bytes)");
                 
-                mainActivityContext.runOnUiThread(() -> completionCallback.onComplete(true));
+                // Call completion callback
+                completeCallback.accept(outputFile);
                 
             } catch (Exception e) {
                 Log.e(TAG, "Download failed for " + item.getName(), e);
-                mainActivityContext.runOnUiThread(() -> completionCallback.onComplete(false));
+                errorCallback.accept(e);
             }
         });
         
         downloadThread.start();
     }
 
-    @Override
     public void openFolder(SideloadItem item) {
         // For server items, show description instead of opening folder
         String description = itemDescriptions.get(item.getName());
@@ -244,39 +252,32 @@ public class YCCCServerProvider extends AbstractProvider {
         }
     }
 
-    @Override
     public void goBack() {
         // Not applicable for server provider
         Log.d(TAG, "goBack called on server provider - not applicable");
     }
 
-    @Override
     public boolean canGoBack() {
         return false; // Server provider doesn't have folder navigation
     }
 
-    @Override
     public String getCurrentPath() {
         return "YCCC VR Lab Server";
     }
 
-    @Override
     public void setCredentials(String username, String password) {
         // Not needed for our server
     }
 
-    @Override
     public View getSettingsView() {
         // No additional settings needed for YCCC server
         return null;
     }
 
-    @Override
     public String getProviderName() {
         return "YCCC VR Lab Server";
     }
 
-    @Override
     public String getProviderDescription() {
         return "Connect to the York County Community College VR Lab app store for curated educational VR applications.";
     }
