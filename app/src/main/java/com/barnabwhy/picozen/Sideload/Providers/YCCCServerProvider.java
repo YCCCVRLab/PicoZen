@@ -22,15 +22,18 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.function.Consumer;
+import java.util.HashMap;
+import java.util.Map;
 
 public class YCCCServerProvider extends AbstractProvider {
     // Updated to use new Koyeb deployment server
     private static final String SERVER_BASE_URL = "https://above-odella-john-barr-40e8cdf4.koyeb.app/api";
     private static final String TAG = "YCCCServerProvider";
+    
+    // Store additional metadata for each item
+    private Map<String, String> itemDescriptions = new HashMap<>();
+    private Map<String, String> itemDownloadUrls = new HashMap<>();
 
     @Override
     public boolean usesAddress() {
@@ -92,16 +95,10 @@ public class YCCCServerProvider extends AbstractProvider {
                     double rating = app.optDouble("rating", 0.0);
                     int downloadCount = app.optInt("downloadCount", 0);
                     String fileSizeFormatted = app.optString("fileSizeFormatted", "Unknown");
+                    long fileSize = app.optLong("fileSize", 0);
                     
                     // Create download URL
                     String downloadUrl = SERVER_BASE_URL + "/download/" + app.getInt("id");
-                    
-                    // Create sideload item
-                    SideloadItem item = new SideloadItem();
-                    item.type = SideloadItemType.FILE;
-                    item.name = title;
-                    item.size = fileSizeFormatted;
-                    item.downloadUrl = downloadUrl;
                     
                     // Create detailed description
                     StringBuilder detailedDescription = new StringBuilder();
@@ -114,7 +111,18 @@ public class YCCCServerProvider extends AbstractProvider {
                     detailedDescription.append("📦 Size: ").append(fileSizeFormatted).append("\n\n");
                     detailedDescription.append("📝 Description:\n").append(description);
                     
-                    item.description = detailedDescription.toString();
+                    // Create sideload item using proper constructor
+                    SideloadItem item = new SideloadItem(
+                        SideloadItemType.FILE,
+                        title,
+                        downloadUrl, // Use download URL as path
+                        fileSize > 0 ? fileSize : 50000000, // Use actual file size or default
+                        "" // No modification date from server
+                    );
+                    
+                    // Store additional metadata
+                    itemDescriptions.put(title, detailedDescription.toString());
+                    itemDownloadUrls.put(title, downloadUrl);
                     
                     items.add(item);
                     
@@ -128,32 +136,56 @@ public class YCCCServerProvider extends AbstractProvider {
             Log.e(TAG, "Failed to fetch apps from YCCC server", e);
             
             // Add a fallback item to show connection status
-            SideloadItem errorItem = new SideloadItem();
-            errorItem.type = SideloadItemType.FOLDER;
-            errorItem.name = "❌ Connection Error";
-            errorItem.description = "Failed to connect to YCCC VR Lab server.\n\n" +
+            SideloadItem errorItem = new SideloadItem(
+                SideloadItemType.DIRECTORY, // Use DIRECTORY instead of FOLDER
+                "❌ Connection Error",
+                "",
+                0,
+                ""
+            );
+            
+            String errorDescription = "Failed to connect to YCCC VR Lab server.\n\n" +
                     "Error: " + e.getMessage() + "\n\n" +
                     "Please check your internet connection and try again.\n\n" +
                     "Server: " + SERVER_BASE_URL;
+                    
+            itemDescriptions.put("❌ Connection Error", errorDescription);
             items.add(errorItem);
         }
         
         return items;
     }
 
-    @Override
-    public void downloadFile(SideloadItem item, Consumer<SideloadAdapter.DownloadProgress> progressCallback, Consumer<Boolean> completionCallback) {
-        if (item.downloadUrl == null || item.downloadUrl.isEmpty()) {
-            Log.e(TAG, "No download URL for item: " + item.name);
-            completionCallback.accept(false);
+    // Custom callback interfaces to replace Java 8 Consumer
+    public interface DownloadProgressCallback {
+        void onProgress(DownloadProgressInfo progress);
+    }
+    
+    public interface DownloadCompletionCallback {
+        void onComplete(boolean success);
+    }
+    
+    // Custom progress info class
+    public static class DownloadProgressInfo {
+        public long totalBytes = -1;
+        public long downloadedBytes = 0;
+        public String filename = "";
+    }
+
+    public void downloadFile(SideloadItem item, DownloadProgressCallback progressCallback, DownloadCompletionCallback completionCallback) {
+        String downloadUrl = itemDownloadUrls.get(item.getName());
+        
+        if (downloadUrl == null || downloadUrl.isEmpty()) {
+            Log.e(TAG, "No download URL for item: " + item.getName());
+            completionCallback.onComplete(false);
             return;
         }
 
         Thread downloadThread = new Thread(() -> {
             try {
-                Log.i(TAG, "Starting download: " + item.name + " from " + item.downloadUrl);
+                Log.i(TAG, "Starting download: " + item.getName() + " from " + downloadUrl);
                 
-                URL url = new URL(item.downloadUrl);
+                URL url = new URL(downloadUrl);
                 InputStream inputStream = url.openStream();
                 DataInputStream dataInputStream = new DataInputStream(inputStream);
                 
@@ -164,7 +196,7 @@ public class YCCCServerProvider extends AbstractProvider {
                 }
                 
                 // Generate filename
-                String filename = item.name.replaceAll("[^a-zA-Z0-9._-]", "_") + ".apk";
+                String filename = item.getName().replaceAll("[^a-zA-Z0-9._-]", "_") + ".apk";
                 File outputFile = new File(downloadsDir, filename);
                 
                 FileOutputStream fileOutputStream = new FileOutputStream(outputFile);
@@ -177,13 +209,13 @@ public class YCCCServerProvider extends AbstractProvider {
                     fileOutputStream.write(buffer, 0, bytesRead);
                     totalBytesRead += bytesRead;
                     
-                    // Update progress (we don't know total size, so show bytes downloaded)
-                    SideloadAdapter.DownloadProgress progress = new SideloadAdapter.DownloadProgress();
-                    progress.totalBytes = -1; // Unknown total size
+                    // Update progress
+                    DownloadProgressInfo progress = new DownloadProgressInfo();
+                    progress.totalBytes = item.getSize();
                     progress.downloadedBytes = totalBytesRead;
                     progress.filename = filename;
                     
-                    mainActivityContext.runOnUiThread(() -> progressCallback.accept(progress));
+                    mainActivityContext.runOnUiThread(() -> progressCallback.onProgress(progress));
                 }
                 
                 fileOutputStream.close();
@@ -191,11 +223,11 @@ public class YCCCServerProvider extends AbstractProvider {
                 
                 Log.i(TAG, "Download completed: " + filename + " (" + totalBytesRead + " bytes)");
                 
-                mainActivityContext.runOnUiThread(() -> completionCallback.accept(true));
+                mainActivityContext.runOnUiThread(() -> completionCallback.onComplete(true));
                 
             } catch (Exception e) {
-                Log.e(TAG, "Download failed for " + item.name, e);
-                mainActivityContext.runOnUiThread(() -> completionCallback.accept(false));
+                Log.e(TAG, "Download failed for " + item.getName(), e);
+                mainActivityContext.runOnUiThread(() -> completionCallback.onComplete(false));
             }
         });
         
@@ -204,8 +236,12 @@ public class YCCCServerProvider extends AbstractProvider {
 
     @Override
     public void openFolder(SideloadItem item) {
-        // Not applicable for server provider
-        Log.d(TAG, "openFolder called on server provider - not applicable");
+        // For server items, show description instead of opening folder
+        String description = itemDescriptions.get(item.getName());
+        if (description != null) {
+            // You can implement a dialog or toast to show the description
+            Log.i(TAG, "Item description: " + description);
+        }
     }
 
     @Override
@@ -243,5 +279,15 @@ public class YCCCServerProvider extends AbstractProvider {
     @Override
     public String getProviderDescription() {
         return "Connect to the York County Community College VR Lab app store for curated educational VR applications.";
+    }
+    
+    // Get description for an item
+    public String getItemDescription(String itemName) {
+        return itemDescriptions.get(itemName);
+    }
+    
+    // Get download URL for an item  
+    public String getItemDownloadUrl(String itemName) {
+        return itemDownloadUrls.get(itemName);
     }
 }
