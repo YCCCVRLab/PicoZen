@@ -28,7 +28,8 @@ import java.util.ArrayList;
 import java.util.function.Consumer;
 
 public class YCCCServerProvider extends AbstractProvider {
-    private static final String SERVER_BASE_URL = "https://picozen-api.netlify.app/api";
+    // Updated to use new Koyeb deployment server
+    private static final String SERVER_BASE_URL = "https://above-odella-john-barr-40e8cdf4.koyeb.app/api";
     private static final String TAG = "YCCCServerProvider";
 
     @Override
@@ -52,168 +53,195 @@ public class YCCCServerProvider extends AbstractProvider {
         thread.start();
     }
 
-    public void setHolder(int position, SideloadAdapter.ViewHolder holder) {
-        SideloadItem item = itemList.get(position);
-        holder.name.setText(item.getName());
-
-        // All items are downloadable apps
-        holder.size.setVisibility(View.VISIBLE);
-        holder.downloadIcon.setVisibility(View.VISIBLE);
-        holder.openFolderIcon.setVisibility(View.GONE);
-
-        // Set click listener for download
-        holder.layout.setOnClickListener(view -> {
-            // Download will be handled by the adapter's download mechanism
-            Log.i(TAG, "Selected app: " + item.getName());
-        });
-    }
-
     private ArrayList<SideloadItem> getAppsFromServer() {
         ArrayList<SideloadItem> items = new ArrayList<>();
         
         try {
-            state = ProviderState.FETCHING;
-            mainActivityContext.runOnUiThread(notifyCallback);
-
-            // Fetch apps from our YCCC server
-            URL u = new URL(SERVER_BASE_URL + "/apps");
-            InputStream stream = u.openStream();
-            int bufferSize = 1024;
-            char[] buffer = new char[bufferSize];
-            StringBuilder out = new StringBuilder();
-            Reader in = new InputStreamReader(stream, StandardCharsets.UTF_8);
-            for (int numRead; (numRead = in.read(buffer, 0, buffer.length)) > 0; ) {
-                out.append(buffer, 0, numRead);
-            }
+            Log.i(TAG, "Connecting to YCCC VR Lab server...");
             
-            JSONObject response = new JSONObject(out.toString());
+            // Fetch apps from the API
+            URL appsUrl = new URL(SERVER_BASE_URL + "/apps");
+            InputStream appsStream = appsUrl.openStream();
+            Reader appsReader = new InputStreamReader(appsStream, StandardCharsets.UTF_8);
+            
+            StringBuilder appsJson = new StringBuilder();
+            char[] buffer = new char[1024];
+            int bytesRead;
+            while ((bytesRead = appsReader.read(buffer)) != -1) {
+                appsJson.append(buffer, 0, bytesRead);
+            }
+            appsReader.close();
+            
+            Log.i(TAG, "Received response from server: " + appsJson.toString().substring(0, Math.min(200, appsJson.length())));
+            
+            JSONObject response = new JSONObject(appsJson.toString());
             
             if (response.getBoolean("success")) {
                 JSONArray appsArray = response.getJSONArray("apps");
                 
+                Log.i(TAG, "Found " + appsArray.length() + " apps on server");
+                
                 for (int i = 0; i < appsArray.length(); i++) {
                     JSONObject app = appsArray.getJSONObject(i);
                     
-                    String name = app.getString("title");
-                    String downloadUrl = SERVER_BASE_URL + "/download/" + app.getInt("id");
-                    long size = app.optLong("fileSize", 0);
+                    String title = app.getString("title");
+                    String description = app.optString("shortDescription", app.optString("description", ""));
                     String developer = app.optString("developer", "Unknown");
+                    String version = app.optString("version", "1.0");
                     String category = app.optString("category", "Apps");
+                    double rating = app.optDouble("rating", 0.0);
+                    int downloadCount = app.optInt("downloadCount", 0);
+                    String fileSizeFormatted = app.optString("fileSizeFormatted", "Unknown");
                     
-                    // Create display name with additional info
-                    String displayName = name + " (" + category + " - " + developer + ")";
+                    // Create download URL
+                    String downloadUrl = SERVER_BASE_URL + "/download/" + app.getInt("id");
                     
-                    items.add(new SideloadItem(
-                        SideloadItemType.FILE, 
-                        displayName, 
-                        downloadUrl, 
-                        size, 
-                        "VR App"
-                    ));
+                    // Create sideload item
+                    SideloadItem item = new SideloadItem();
+                    item.type = SideloadItemType.FILE;
+                    item.name = title;
+                    item.size = fileSizeFormatted;
+                    item.downloadUrl = downloadUrl;
+                    
+                    // Create detailed description
+                    StringBuilder detailedDescription = new StringBuilder();
+                    detailedDescription.append("📱 ").append(title).append("\n");
+                    detailedDescription.append("👨‍💻 Developer: ").append(developer).append("\n");
+                    detailedDescription.append("🏷️ Version: ").append(version).append("\n");
+                    detailedDescription.append("📂 Category: ").append(category).append("\n");
+                    detailedDescription.append("⭐ Rating: ").append(String.format("%.1f", rating)).append("/5\n");
+                    detailedDescription.append("⬇️ Downloads: ").append(downloadCount).append("\n");
+                    detailedDescription.append("📦 Size: ").append(fileSizeFormatted).append("\n\n");
+                    detailedDescription.append("📝 Description:\n").append(description);
+                    
+                    item.description = detailedDescription.toString();
+                    
+                    items.add(item);
+                    
+                    Log.d(TAG, "Added app: " + title + " (" + fileSizeFormatted + ")");
                 }
+            } else {
+                Log.e(TAG, "Server returned error: " + response.optString("error", "Unknown error"));
             }
-
-            state = ProviderState.IDLE;
-            Log.i(TAG, "Successfully loaded " + items.size() + " apps from server");
             
         } catch (Exception e) {
-            state = ProviderState.ERROR;
-            Log.e(TAG, "Error fetching apps from server: " + e.toString());
+            Log.e(TAG, "Failed to fetch apps from YCCC server", e);
             
-            // Add fallback message
-            items.add(new SideloadItem(
-                SideloadItemType.FILE, 
-                "Error: Could not connect to YCCC server", 
-                "", 
-                0, 
-                "Check network connection"
-            ));
+            // Add a fallback item to show connection status
+            SideloadItem errorItem = new SideloadItem();
+            errorItem.type = SideloadItemType.FOLDER;
+            errorItem.name = "❌ Connection Error";
+            errorItem.description = "Failed to connect to YCCC VR Lab server.\n\n" +
+                    "Error: " + e.getMessage() + "\n\n" +
+                    "Please check your internet connection and try again.\n\n" +
+                    "Server: " + SERVER_BASE_URL;
+            items.add(errorItem);
         }
         
-        mainActivityContext.runOnUiThread(notifyCallback);
         return items;
     }
 
-    public void downloadFile(SideloadItem item, Consumer<File> startCallback, Consumer<Long> progressCallback, Consumer<File> completeCallback, Consumer<Exception> errorCallback) {
-        File file = null;
-        try {
-            String fileUrl = item.getPath(); // This is already the full download URL
-            final File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-            Files.createDirectories(Paths.get(dir.getAbsolutePath() + "/PicoZen"));
-            
-            // Extract clean filename from display name
-            String fileName = item.getName().split(" \\(")[0] + ".apk";
-            file = new File(dir.getAbsolutePath() + "/PicoZen/" + fileName);
-            
-            Log.i(TAG, "Downloading: " + fileName);
-            int i = 1;
-            while(file.exists()) {
-                String baseName = fileName.substring(0, fileName.lastIndexOf("."));
-                String extension = fileName.substring(fileName.lastIndexOf("."));
-                file = new File(dir.getAbsolutePath() + "/PicoZen/" + baseName + " (" + i + ")" + extension);
-                i++;
-            }
-            
-            startCallback.accept(file);
-            Log.i(TAG, "Download started for: " + file.getName());
-            
-            if(downloadFileFromUrl(fileUrl, file, progressCallback)) {
-                completeCallback.accept(file);
-                Log.i(TAG, "Download completed: " + file.getName());
-            } else {
-                file.delete();
-                errorCallback.accept(new Exception("Download failed"));
-            }
-        } catch(Exception e) {
-            Log.e(TAG, "Download error: " + e.toString());
-            if(file != null && file.exists()) {
-                file.delete();
-            }
-            errorCallback.accept(e);
+    @Override
+    public void downloadFile(SideloadItem item, Consumer<SideloadAdapter.DownloadProgress> progressCallback, Consumer<Boolean> completionCallback) {
+        if (item.downloadUrl == null || item.downloadUrl.isEmpty()) {
+            Log.e(TAG, "No download URL for item: " + item.name);
+            completionCallback.accept(false);
+            return;
         }
-    }
 
-    protected static boolean downloadFileFromUrl(String url, File outputFile, Consumer<Long> progressCallback) {
-        try {
-            return saveStream(new URL(url).openStream(), outputFile, progressCallback);
-        } catch (Exception e) {
-            Log.e("YCCCServerProvider", "Download error: " + e.toString());
-            return false;
-        }
-    }
-
-    protected static boolean saveStream(InputStream is, File outputFile, Consumer<Long> progressCallback) {
-        try {
-            DataInputStream dis = new DataInputStream(is);
-
-            long processed = 0;
-            int length;
-            byte[] buffer = new byte[65536];
-            FileOutputStream fos = new FileOutputStream(outputFile);
-
-            while ((length = dis.read(buffer)) > 0) {
-                if(!outputFile.canWrite()) {
-                    fos.flush();
-                    fos.close();
-                    is.close();
-                    dis.close();
-                    return false;
+        Thread downloadThread = new Thread(() -> {
+            try {
+                Log.i(TAG, "Starting download: " + item.name + " from " + item.downloadUrl);
+                
+                URL url = new URL(item.downloadUrl);
+                InputStream inputStream = url.openStream();
+                DataInputStream dataInputStream = new DataInputStream(inputStream);
+                
+                // Create downloads directory if it doesn't exist
+                File downloadsDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "PicoZen");
+                if (!downloadsDir.exists()) {
+                    downloadsDir.mkdirs();
                 }
-
-                fos.write(buffer, 0, length);
-                fos.flush();
-                processed += length;
-                progressCallback.accept(processed);
+                
+                // Generate filename
+                String filename = item.name.replaceAll("[^a-zA-Z0-9._-]", "_") + ".apk";
+                File outputFile = new File(downloadsDir, filename);
+                
+                FileOutputStream fileOutputStream = new FileOutputStream(outputFile);
+                
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                long totalBytesRead = 0;
+                
+                while ((bytesRead = dataInputStream.read(buffer)) != -1) {
+                    fileOutputStream.write(buffer, 0, bytesRead);
+                    totalBytesRead += bytesRead;
+                    
+                    // Update progress (we don't know total size, so show bytes downloaded)
+                    SideloadAdapter.DownloadProgress progress = new SideloadAdapter.DownloadProgress();
+                    progress.totalBytes = -1; // Unknown total size
+                    progress.downloadedBytes = totalBytesRead;
+                    progress.filename = filename;
+                    
+                    mainActivityContext.runOnUiThread(() -> progressCallback.accept(progress));
+                }
+                
+                fileOutputStream.close();
+                dataInputStream.close();
+                
+                Log.i(TAG, "Download completed: " + filename + " (" + totalBytesRead + " bytes)");
+                
+                mainActivityContext.runOnUiThread(() -> completionCallback.accept(true));
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Download failed for " + item.name, e);
+                mainActivityContext.runOnUiThread(() -> completionCallback.accept(false));
             }
-            fos.flush();
-            fos.close();
-            is.close();
-            dis.close();
+        });
+        
+        downloadThread.start();
+    }
 
-            return true;
-        } catch (Exception e) {
-            Log.e("YCCCServerProvider", "Save stream error: " + e.toString());
-            return false;
-        }
+    @Override
+    public void openFolder(SideloadItem item) {
+        // Not applicable for server provider
+        Log.d(TAG, "openFolder called on server provider - not applicable");
+    }
+
+    @Override
+    public void goBack() {
+        // Not applicable for server provider
+        Log.d(TAG, "goBack called on server provider - not applicable");
+    }
+
+    @Override
+    public boolean canGoBack() {
+        return false; // Server provider doesn't have folder navigation
+    }
+
+    @Override
+    public String getCurrentPath() {
+        return "YCCC VR Lab Server";
+    }
+
+    @Override
+    public void setCredentials(String username, String password) {
+        // Not needed for our server
+    }
+
+    @Override
+    public View getSettingsView() {
+        // No additional settings needed for YCCC server
+        return null;
+    }
+
+    @Override
+    public String getProviderName() {
+        return "YCCC VR Lab Server";
+    }
+
+    @Override
+    public String getProviderDescription() {
+        return "Connect to the York County Community College VR Lab app store for curated educational VR applications.";
     }
 }
